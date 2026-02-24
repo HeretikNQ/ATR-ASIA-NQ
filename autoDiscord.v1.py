@@ -20,6 +20,7 @@ load_dotenv()
 # Replace hardcoded TOKEN and CHANNEL_ID with environment variables
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
+VERSION = os.getenv("VERSION")
 
 if not TOKEN or not CHANNEL_ID:
     raise ValueError("DISCORD_TOKEN or CHANNEL_ID is not set in the .env file.")
@@ -125,7 +126,7 @@ async def report_loop():
                     try:
                         res = get_market_analysis()
                         embed = discord.Embed(
-                            title=f"📊 Analyse NQ - {res['date']}",
+                            title=f"{VERSION} 📊 Analyse NQ - {res['date']}",
                             description="Extraction session 02h00 - 06h00 (Paris)",
                             color=discord.Color.blue()
                         )
@@ -159,7 +160,7 @@ async def analyse(ctx):
         
         # On crée un Embed identique au rapport quotidien
         embed = discord.Embed(
-            title=f"📊 Analyse Manuelle NQ - {res['date']}",
+            title=f"{VERSION} 📊 Analyse Manuelle NQ - {res['date']}",
             description="Extraction session 02h00 - 06h00 (Paris)",
             color=discord.Color.green() # Couleur verte pour différencier du rapport auto
         )
