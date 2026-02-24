@@ -1,5 +1,3 @@
-!pip install -U discord.py yfinance pandas nest-asyncio pytz certifi
-
 import discord
 from discord.ext import commands, tasks
 import yfinance as yf
@@ -12,10 +10,21 @@ import datetime as dt
 from datetime import time
 import pytz
 import random
+import logging
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Replace hardcoded TOKEN and CHANNEL_ID with environment variables
+TOKEN = os.getenv("DISCORD_TOKEN")
+CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
+
+if not TOKEN or not CHANNEL_ID:
+    raise ValueError("DISCORD_TOKEN or CHANNEL_ID is not set in the .env file.")
 
 # --- CONFIGURATION ---
-TOKEN = 'TOKEN'
-CHANNEL_ID = 1475252802107474102
 HEURE_ALERTE = 8
 MINUTE_ALERTE = 0
 TIMEZONE = pytz.timezone("Europe/Paris")
@@ -31,8 +40,24 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+# =========================
+# LOGGING UNIQUE -> bot_discord.log
+# =========================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(funcName)s | %(message)s",
+    handlers=[
+        logging.FileHandler("bot_discord.log", encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger("BOT_DISCORD")
+
 # --- LOGIQUE DE CALCUL ---
 def get_market_analysis():
+    logger.info("Appel get_market_analysis")
     symbol = "NQ=F"
     data_1m = yf.download(symbol, period="5d", interval="1m", progress=False, auto_adjust=True)
     if data_1m.empty: raise ValueError("Données 1m indisponibles.")
@@ -70,15 +95,21 @@ def get_market_analysis():
     elif ratio_daily < 33: d_status, d_stats = "⚖️ JOURNÉE ÉQUILIBRÉE", "• Sortie + tendance : 60%\n• Risque Fakeout : 30/40%"
     else: d_status, d_stats = "🐢 ASIA LARGE", "• Expansion limitée : 35/45%\n• Marché Choppy : 60%"
 
-    return {
-        "date": last_session_date, "high": a_high, "low": a_low, "range": range_asia,
-        "ratio_h1": ratio_h1, "ratio_daily": ratio_daily,
-        "status": status, "interp": interp, "d_status": d_status, "d_stats": d_stats
-    }
+    try:
+        logger.info(f"Analyse OK | Range={range_asia:.2f} | RatioH1={ratio_h1:.2f}")
+        return {
+            "date": last_session_date, "high": a_high, "low": a_low, "range": range_asia,
+            "ratio_h1": ratio_h1, "ratio_daily": ratio_daily,
+            "status": status, "interp": interp, "d_status": d_status, "d_stats": d_stats
+        }
+    except Exception as e:
+        logger.error(f"Erreur analyse marché: {e}", exc_info=True)
+        raise
 
 # --- BOUCLE UNIQUE DISCRÈTE ---
 @tasks.loop(seconds=30)
 async def report_loop():
+    logger.info("Tick report_loop")
     global dernier_envoi_date
     now = dt.datetime.now(TIMEZONE)
 
@@ -105,13 +136,14 @@ async def report_loop():
                         embed.set_footer(text=f"ID: {SESSION_ID} | {now.strftime('%H:%M')}")
 
                         await channel.send("🔔 **RAPPORT QUOTIDIEN NASDAQ**", embed=embed)
-                        print(f"✅ Rapport envoyé avec succès à {now.strftime('%H:%M:%S')}")
+                        logger.info("Rapport envoyé avec succès")
                     except Exception as e:
-                        print(f"❌ Erreur lors de l'envoi auto : {e}")
+                        logger.error(f"Erreur envoi rapport: {e}", exc_info=True)
                         dernier_envoi_date = None
 
 @bot.event
 async def on_ready():
+    logger.info(f"BOT ACTIF | Session {SESSION_ID}")
     print(f'--- BOT ACTIF (ID: {SESSION_ID}) ---')
     print(f'Prêt pour l\'envoi quotidien à {HEURE_ALERTE:02d}:{MINUTE_ALERTE:02d}')
     if not report_loop.is_running():
@@ -119,6 +151,7 @@ async def on_ready():
 
 @bot.command(name='analyse')
 async def analyse(ctx):
+    logger.info("Commande !analyse reçue")
     try:
         # On récupère les mêmes données que pour l'envoi auto
         res = get_market_analysis()
@@ -160,7 +193,10 @@ async def analyse(ctx):
 
         await ctx.send("🔍 **ANALYSE MANUELLE DU NASDAQ**", embed=embed)
         
+        logger.info("Analyse manuelle envoyée")
+        
     except Exception as e:
-        await ctx.send(f"❌ Erreur lors de l'analyse : {e}")
+        logger.error(f"Erreur commande !analyse : {e}", exc_info=True)
+        await ctx.send("❌ Erreur lors de l'analyse.")
 
 bot.run(TOKEN)
